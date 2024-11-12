@@ -87,7 +87,7 @@ public class TestClient {
                 
                 
                 if (i % 10000 == 0) {
-                    msg("From " + depCity + " to " + arrCity +":");
+                    msg("Transaction " + i + ": From " + depCity + " to " + arrCity +":");
                     msg(cr.getResults()[0].toFormattedString());
                 }
                
