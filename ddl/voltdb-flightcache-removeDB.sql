@@ -1,0 +1,17 @@
+
+DROP PROCEDURE CompoundListFlight IF EXISTS;
+DROP PROCEDURE CompoundUpsertFlight IF EXISTS;
+DROP PROCEDURE GET_FLIGHTS_FOR_CITY_PAIR IF EXISTS;
+DROP PROCEDURE GET_FLIGHT_DETAILS IF EXISTS;
+
+DROP view flight_sale_summary IF EXISTS;
+
+
+DROP STREAM flight_sale IF EXISTS;
+
+
+DROP TABLE city_pair_flight IF EXISTS;
+DROP TABLE flights IF EXISTS;
+DROP table flight_inventory IF EXISTS;
+
+ 
