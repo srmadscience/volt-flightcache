@@ -1,7 +1,7 @@
 package org.voltdb.voltutil.stats;
 
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2022 VoltDB Inc.
+ * Copyright (C) 2024 Volt Active Data Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,10 +23,21 @@ package org.voltdb.voltutil.stats;
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * Stores a histogram of 'something', where buckets can be incremented by
+ * arbitrary amounts.
+ */
 public class SizeHistogram {
+    
+     final String NUMFORMAT_INTEGER = "%16d";
 
     String description = "";
     String name = "";
+    
+    /**
+     * Highest value seen
+     */
+    int maxUsedSize = 0;
 
     int[] theHistogram = new int[0];
     String[] theHistogramComment = new String[0];
@@ -46,7 +57,15 @@ public class SizeHistogram {
             theHistogram[theHistogram.length - 1]++;
             theHistogramComment[theHistogram.length - 1] = comment;
         }
+        
+        if (maxUsedSize < size) {
+            maxUsedSize = size;
+        }
+
+    
     }
+    
+    
 
     @Override
     public String toString() {
@@ -67,6 +86,32 @@ public class SizeHistogram {
 
         return b.toString();
     }
+    
+    public String toStringShort() {
+        StringBuffer b = new StringBuffer(name);
+
+        b.append(" ");
+        b.append(description);
+        b.append(System.lineSeparator());
+
+        b.append(" Reports=");
+        b.append(String.format(NUMFORMAT_INTEGER, getEventTotal()));
+         b.append(", 50%=");
+        b.append(String.format(NUMFORMAT_INTEGER, getSizePct(50)));
+        b.append(", 95%=");
+        b.append(String.format(NUMFORMAT_INTEGER, getSizePct(95)));
+        b.append(", 99%=");
+        b.append(String.format(NUMFORMAT_INTEGER, getSizePct(99)));
+        b.append(", 99.5%=");
+        b.append(String.format(NUMFORMAT_INTEGER, getSizePct(99.5)));
+        b.append(", 99.95%=");
+        b.append(String.format(NUMFORMAT_INTEGER, getSizePct(99.95)));
+        b.append(", Max=");
+        b.append(String.format(NUMFORMAT_INTEGER, maxUsedSize));
+
+          
+       return b.toString();
+    }
 
     public String getDescription() {
         return description;
@@ -75,5 +120,54 @@ public class SizeHistogram {
     public void setDescription(String description) {
         this.description = description;
     }
+  
+    public int getSizePct(double pct) {
+
+        final double target = getEventTotal() * (pct / 100);
+        double runningTotal = theHistogram[0];
+        int matchValue = 0;
+
+        for (int i = 1; i < theHistogram.length; i++) {
+
+            if (runningTotal >= target) {
+                break;
+            }
+
+            matchValue = i;
+            runningTotal = runningTotal + theHistogram[i];
+
+        }
+
+        return matchValue;
+    }
+
+   
+  
+    
+    public long getEventTotal() {
+
+        long runningTotal = 0;
+
+        for (double element : theHistogram) {
+            runningTotal += element;
+        }
+
+        return runningTotal;
+    }
+
+    /**
+     * @return the maxUsedSize
+     */
+    public int getMaxUsedSize() {
+        return maxUsedSize;
+    }
+
+    /**
+     * @return the theHistogramComment
+     */
+    public String getTheHistogramComment(int commentId) {
+        return theHistogramComment[commentId];
+    }
+
 
 }

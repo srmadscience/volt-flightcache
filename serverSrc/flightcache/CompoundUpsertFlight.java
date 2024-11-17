@@ -1,5 +1,5 @@
 /* This file is part of VoltDB.
- * Copyright (C) 2024 VoltDB Inc.
+ * Copyright (C) 2024 Volt Active Data Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -36,20 +36,20 @@ public class CompoundUpsertFlight extends VoltCompoundProcedure {
     
     static VoltLogger LOG = new VoltLogger("CompoundUpsertFLight");
  
-    String depCity, arrCity, flightId;
+    String depCity, arrCity, flightId,tailNumber;
     Date flightDate;
 
 
-    public long run(String depCity, String arrCity, Date flightDate, String flightId) {
+    public long run(String depCity, String arrCity, Date flightDate, String flightId, String tailNumber) {
 
-        LOG.info( depCity+ " " + arrCity+ " " + flightId + " " + flightDate);
         // Save inputs
         this.depCity = depCity;
         this.arrCity = arrCity;
         this.flightId = flightId;
         this.flightDate = flightDate;
+        this.tailNumber = tailNumber;
 
-        if (depCity == null || arrCity == null || flightId == null || flightDate == null) {
+        if (depCity == null || arrCity == null || flightId == null || flightDate == null|| tailNumber == null) {
             LOG.error(PARAMETER_NULL_CODE);
             this.setAppStatusCode(PARAMETER_NULL_CODE);
             this.setAppStatusString(PARAMETER_NULL_MESSAGE);
@@ -63,8 +63,8 @@ public class CompoundUpsertFlight extends VoltCompoundProcedure {
 
      private void doUpserts(ClientResponse[] unused) {
 
-        queueProcedureCall("city_pair_flight.UPSERT", depCity, arrCity, flightDate, flightId );
-        queueProcedureCall("flights.UPSERT", depCity, arrCity, flightDate, flightId );
+        queueProcedureCall("city_pair_flight.UPSERT", depCity, arrCity, flightDate, flightId,tailNumber );
+        queueProcedureCall("flights.UPSERT", depCity, arrCity, flightDate, flightId,tailNumber );
         queueProcedureCall("flight_inventory.UPSERT", flightId,  flightDate, "K", 12, 100);
         queueProcedureCall("flight_inventory.UPSERT", flightId,  flightDate, "E", 50, 12);
         

@@ -1,7 +1,7 @@
 package org.voltdb.voltutil.stats;
 
 /* This file is part of VoltDB.
- * Copyright (C) 2008-2022 VoltDB Inc.
+ * Copyright (C) 2024 Volt Active Data Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -24,12 +24,17 @@ package org.voltdb.voltutil.stats;
  */
 
 import java.util.HashMap;
+import java.util.Map;
 
+/**
+ * Singleton cache for histograms. Note that because this is a singleton there
+ * are practical scaling limits.
+ */
 public class SafeHistogramCache {
 
     private static SafeHistogramCache instance = null;
 
-    HashMap<String, StatsHistogram> theHistogramMap = new HashMap<>();
+    HashMap<String, LatencyHistogram> theHistogramMap = new HashMap<>();
     HashMap<String, Long> theCounterMap = new HashMap<>();
     HashMap<String, SizeHistogram> theSizeHistogramMap = new HashMap<>();
 
@@ -41,6 +46,9 @@ public class SafeHistogramCache {
         // Exists only to defeat instantiation.
     }
 
+    /**
+     * @return The Cache instance.
+     */
     public static SafeHistogramCache getInstance() {
         if (instance == null) {
             instance = new SafeHistogramCache();
@@ -48,6 +56,9 @@ public class SafeHistogramCache {
         return instance;
     }
 
+    /**
+     * Clear everything.
+     */
     public void reset() {
         synchronized (theHistogramMap) {
             synchronized (theCounterMap) {
@@ -61,14 +72,20 @@ public class SafeHistogramCache {
         }
     }
 
-    public StatsHistogram get(String type) {
-        StatsHistogram h = null;
+    /**
+     * Return a histogram, creating it if needed.
+     * 
+     * @param type
+     * @return a LatencyHistogram
+     */
+    public LatencyHistogram get(String type) {
+        LatencyHistogram h = null;
 
         synchronized (theHistogramMap) {
             h = theHistogramMap.get(type);
 
             if (h == null) {
-                h = new StatsHistogram(DEFAULT_SIZE);
+                h = new LatencyHistogram(DEFAULT_SIZE);
                 theHistogramMap.put(type, h);
             }
         }
@@ -76,18 +93,23 @@ public class SafeHistogramCache {
         return h;
     }
 
+    /**
+     * Recreate a histogram, keeping size the same.
+     * 
+     * @param type
+     */
     public void clear(String type) {
 
-        StatsHistogram oldH = null;
-        StatsHistogram newH = null;
+        LatencyHistogram oldH = null;
+        LatencyHistogram newH = null;
 
         synchronized (theHistogramMap) {
             oldH = theHistogramMap.remove(type);
 
             if (oldH == null) {
-                newH = new StatsHistogram(100);
+                newH = new LatencyHistogram(100);
             } else {
-                newH = new StatsHistogram(oldH.maxSize);
+                newH = new LatencyHistogram(oldH.maxSize);
             }
             theHistogramMap.put(type, newH);
 
@@ -95,6 +117,10 @@ public class SafeHistogramCache {
 
     }
 
+    /**
+     * @param type
+     * @return SizeHistogram
+     */
     public SizeHistogram getSize(String type) {
         SizeHistogram h = null;
 
@@ -110,6 +136,12 @@ public class SafeHistogramCache {
         return h;
     }
 
+    /**
+     * Return a counter value
+     * 
+     * @param type
+     * @return
+     */
     public long getCounter(String type) {
         Long l = new Long(0);
 
@@ -123,6 +155,12 @@ public class SafeHistogramCache {
         return l.longValue();
     }
 
+    /**
+     * Set a counter value.
+     *
+     * @param type
+     * @param value
+     */
     public void setCounter(String type, long value) {
 
         synchronized (theCounterMap) {
@@ -136,24 +174,50 @@ public class SafeHistogramCache {
 
     }
 
+    /**
+     * Increment a counter in a Thread Safe way.
+     * 
+     * @param type
+     */
     public void incCounter(String type) {
 
-        synchronized (theCounterMap) {
-            Long l = theCounterMap.get(type);
-            if (l == null) {
-                l = new Long(0);
-            }
-            theCounterMap.put(type, l.longValue() + 1);
-        }
+        incCounter(type, 1);
 
     }
 
+    /**
+     * Increment a counter in a Thread Safe way.
+     * 
+     * @param type
+     */
+    public void incCounter(String type, int quantity) {
+
+        if (quantity != 0) {
+
+            synchronized (theCounterMap) {
+                Long l = theCounterMap.get(type);
+                if (l == null) {
+                    l = new Long(0);
+                }
+                theCounterMap.put(type, l.longValue() + quantity);
+            }
+        }
+    }
+
+    /**
+     * Report a value, usually latency.
+     * 
+     * @param type
+     * @param value
+     * @param comment
+     * @param defaultSize
+     */
     public void report(String type, int value, String comment, int defaultSize) {
 
         synchronized (theHistogramMap) {
-            StatsHistogram h = theHistogramMap.get(type);
+            LatencyHistogram h = theHistogramMap.get(type);
             if (h == null) {
-                h = new StatsHistogram(type, defaultSize);
+                h = new LatencyHistogram(type, defaultSize);
                 theHistogramMap.put(type, h);
             }
             h.report(value, comment);
@@ -162,6 +226,14 @@ public class SafeHistogramCache {
 
     }
 
+    /**
+     * Report a size
+     * 
+     * @param type
+     * @param size
+     * @param comment
+     * @param defaultSize
+     */
     public void reportSize(String type, int size, String comment, int defaultSize) {
 
         synchronized (theSizeHistogramMap) {
@@ -177,29 +249,122 @@ public class SafeHistogramCache {
 
     }
 
+    /**
+     * Report a latency, relative to a defined start time.
+     * 
+     * @param type
+     * @param start
+     * @param comment
+     * @param defaultSize
+     */
     public void reportLatency(String type, long start, String comment, int defaultSize) {
 
-        synchronized (theHistogramMap) {
-            StatsHistogram h = theHistogramMap.get(type);
-            if (h == null) {
-                h = new StatsHistogram(type, defaultSize);
+        reportLatency(type, start, comment, defaultSize, 1);
 
+    }
+
+    /**
+     * Report a latency measurement, relative to now. If it's >= maxSize it goes
+     * into the last element. Negative values are forced to zero.
+     * 
+     * @param latency
+     * @param comment
+     * @param howmany
+     */
+    public void reportLatency(String type, long start, String comment, int defaultSize, int count) {
+        synchronized (theHistogramMap) {
+            LatencyHistogram h = theHistogramMap.get(type);
+            if (h == null) {
+                h = new LatencyHistogram(type, defaultSize);
+                theHistogramMap.put(type, h);
             }
-            h.reportLatency(start, comment);
-            theHistogramMap.put(type, h);
+
+            int latency = (int) (System.currentTimeMillis() - start);
+
+            h.report(latency, comment, count);
+
         }
 
     }
 
-    public StatsHistogram subtractTimes(String bigHist, String smallHist, String name) {
+    /**
+     * Report a latency measurement, relative to now, in microseconds. If it's >=
+     * maxSize it goes into the last element. Negative values are forced to zero.
+     * 
+     * @param latency
+     * @param comment
+     * @param howmany
+     */
+    public void reportLatencyMicros(String type, long start, String comment, int defaultSize, int count) {
+        synchronized (theHistogramMap) {
+            LatencyHistogram h = theHistogramMap.get(type);
+            if (h == null) {
+                h = new LatencyHistogram(type, defaultSize);
+                theHistogramMap.put(type, h);
+            }
 
-        StatsHistogram hBig;
-        StatsHistogram hSmall;
+            final long now = System.nanoTime() / 1000;
+
+            int latency = (int) (now - start);
+
+            h.report(latency, comment, count);
+
+        }
+
+    }
+
+    public void reportLatencyMicros(String type, long start, String comment, int defaultSize) {
+        reportLatencyMicros(type, start, comment, defaultSize, 1);
+    }
+
+    /**
+     * Report a latency measurement, relative to now, in nanoseconds. If it's >=
+     * maxSize it goes into the last element. Negative values are forced to zero.
+     * 
+     * @param latency
+     * @param comment
+     * @param howmany
+     */
+    public void reportLatencyNanos(String type, long start, String comment, int defaultSize, int count) {
+        synchronized (theHistogramMap) {
+            LatencyHistogram h = theHistogramMap.get(type);
+            if (h == null) {
+                h = new LatencyHistogram(type, defaultSize);
+                theHistogramMap.put(type, h);
+            }
+
+            int latency = (int) (System.nanoTime() - start);
+
+            h.report(latency, comment, count);
+
+        }
+
+    }
+
+    public void reportLatencyNanos(String type, long start, String comment, int defaultSize) {
+        reportLatencyNanos(type, start, comment, defaultSize, 1);
+
+    }
+
+    /**
+     * Create a new Histogram by subtracting two existing ones. Note that while the
+     * new Histogram exists in the cache, it will not be updated by changes to its
+     * parents.
+     * 
+     * @param bigHist
+     * @param smallHist
+     * @param name
+     * @return
+     */
+    public LatencyHistogram subtractTimes(String bigHist, String smallHist, String name) {
+
+        LatencyHistogram hBig;
+        LatencyHistogram hSmall;
         synchronized (theHistogramMap) {
             hBig = theHistogramMap.get(bigHist);
             hSmall = theHistogramMap.get(smallHist);
         }
-        StatsHistogram delta = StatsHistogram.subtract(name, hBig, hSmall);
+        LatencyHistogram delta = LatencyHistogram.subtract(name, hBig, hSmall);
 
         synchronized (theHistogramMap) {
             theHistogramMap.put(name, delta);
@@ -245,6 +410,44 @@ public class SafeHistogramCache {
         return data;
     }
 
+    public String toStringShort() {
+        StringBuffer data = new StringBuffer();
+        synchronized (theHistogramMap) {
+            synchronized (theCounterMap) {
+                synchronized (theSizeHistogramMap) {
+
+                    for (Map.Entry<String, LatencyHistogram> entry : theHistogramMap.entrySet()) {
+                        data.append(System.lineSeparator());
+                        data.append(entry.getValue().toStringShort());
+                        data.append(System.lineSeparator());
+                    }
+
+                    for (Map.Entry<String, Long> entry : theCounterMap.entrySet()) {
+                        data.append(System.lineSeparator());
+                        data.append(entry.getKey());
+                        data.append(entry.getValue().toString());
+                        
+                    }
+
+                    for (Map.Entry<String, SizeHistogram> entry : theSizeHistogramMap.entrySet()) {
+                        data.append(System.lineSeparator());
+                        data.append(entry.getValue().toStringShort());
+                        
+                    }
+
+                }
+            }
+        }
+
+        return data.toString();
+    }
+
+    /**
+     * Return stats every statsInterval ms, otherwise an empty string.
+     * 
+     * @param statsInterval
+     * @return
+     */
     public String toStringIfOlderThanMs(int statsInterval) {
 
         String data = "";
@@ -260,6 +463,13 @@ public class SafeHistogramCache {
         return data;
     }
 
+    /**
+     * Create a new Size histogram.
+     * 
+     * @param name
+     * @param batchSize
+     * @param description
+     */
     public void initSize(String name, int batchSize, String description) {
 
         synchronized (theSizeHistogramMap) {
@@ -276,17 +486,71 @@ public class SafeHistogramCache {
 
     }
 
+    /**
+     * Create a new Latency Histogram.
+     * 
+     * @param name
+     * @param batchSize
+     * @param description
+     */
     public void init(String name, int batchSize, String description) {
 
         synchronized (theHistogramMap) {
-            StatsHistogram h = theHistogramMap.get(name);
+            LatencyHistogram h = theHistogramMap.get(name);
             if (h == null) {
-                h = new StatsHistogram(name, batchSize);
+                h = new LatencyHistogram(name, batchSize);
                 h.setDescription(description);
                 theHistogramMap.put(name, h);
             }
 
         }
+
+    }
+
+    public long getMillisecondStartTime() {
+
+        return System.currentTimeMillis();
+    }
+
+    public long getMicrosecondStartTime() {
+
+        return System.nanoTime() / 1000;
+    }
+
+    /**
+     * Get import stats as a string
+     * 
+     * @param shc            Histogram Cache
+     * @param oneLineSummary StringBuffer we append to - note this is a void
+     *                       method....
+     * @param thingName      Thing we're tracking latency for...
+     */
+    public static void getProcPercentiles(SafeHistogramCache shc, StringBuffer oneLineSummary, String thingName) {
+
+        LatencyHistogram rqu = shc.get(thingName);
+        oneLineSummary.append((int) rqu.getLatencyAverage());
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyPct(50));
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyPct(99));
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyPct(99.9));
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyPct(99.99));
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyPct(99.999));
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getMaxUsedSize());
+        oneLineSummary.append(':');
+
+        oneLineSummary.append(rqu.getLatencyHistogram()[rqu.getMaxUsedSize()]);
+        oneLineSummary.append(':');
 
     }
 
