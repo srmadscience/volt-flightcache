@@ -1,3 +1,9 @@
+# Where we got the data #
+
+````
+https://www.transtats.bts.gov/DL_SelectFields.aspx?gnoyr_VQ=FGJ&QO_fu146_anzr=b0-gvzr
+````
+
 # How we created flights.txt #
 
 ````
